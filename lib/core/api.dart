@@ -7,8 +7,10 @@ import 'server_status.dart';
 class Api {
   static final Dio dio = Dio(
     BaseOptions(
-      baseUrl: 'http://10.10.12.14:80/api',
-      // baseUrl: 'http://80.90.89.238:80/api',
+       baseUrl: 'http://80.90.89.238:80/api',
+      // baseUrl: 'http://10.10.12.14:80/api',
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -23,15 +25,12 @@ class Api {
         }
         handler.next(options);
       },
-
       onResponse: (response, handler) {
-        // Server reachable
         ServerStatusService.setOnline();
         handler.next(response);
       },
-
       onError: (e, handler) async {
-        // 🔥 SERVER DOWN DETECTION (GLOBAL)
+        // Server Down Detection
         if (e.type == DioExceptionType.connectionError ||
             e.type == DioExceptionType.unknown ||
             e.error is HandshakeException ||
@@ -39,7 +38,7 @@ class Api {
           ServerStatusService.setOffline();
         }
 
-        // 🔐 AUTH ERROR ONLY
+        // Auth Error
         if (e.response?.statusCode == 401) {
           await Storage.clear();
           AppNavigator.logout();

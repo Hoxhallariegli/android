@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import 'dashboard_screen.dart';
 import '../main.dart';
-// import '../services/location_permission.dart';
-// import '../services/background_manager.dart';
 import '../services/push_service.dart';
+import '../core/api_exception.dart';
+import '../utils/ui_utils.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -19,34 +18,39 @@ class _LoginScreenState extends State<LoginScreen> {
   bool loading = false;
 
   Future<void> submit() async {
+    if (emailCtrl.text.trim().isEmpty || passCtrl.text.trim().isEmpty) {
+      UiUtils.showError(context, 'Please enter email and password');
+      return;
+    }
+
     setState(() => loading = true);
 
-    final success = await AuthService.login(
-      emailCtrl.text.trim(),
-      passCtrl.text.trim(),
-    );
-
-    setState(() => loading = false);
-
-    if (success && mounted) {
-      // // 1️⃣ kërko permission (vetëm një herë)
-      // await LocationPermissionService.request();
-      //
-      // // 2️⃣ nis background tracking
-      // await BackgroundManager.start();
-      await PushService.init();
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainHome()),
+    try {
+      final success = await AuthService.login(
+        emailCtrl.text.trim(),
+        passCtrl.text.trim(),
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Login failed')),
-      );
+
+      if (success && mounted) {
+        // Start PushService in background - DON'T await it
+        // This ensures the user is redirected even if Firebase fails
+        PushService.init();
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const MainHome()),
+        );
+      } else {
+        if (mounted) UiUtils.showError(context, 'Login failed');
+      }
+    } on ApiException catch (e) {
+      if (mounted) UiUtils.showError(context, e.message);
+    } catch (e) {
+      if (mounted) UiUtils.showError(context, 'An unexpected error occurred');
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -62,21 +66,31 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 24),
             TextField(
-              controller: emailCtrl..text = 'shofer@e4.al', // Auto-value për email
-              decoration: const InputDecoration(labelText: 'Email'),
+              controller: emailCtrl..text = 'shofer@e4.al',
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: passCtrl..text = 'Saxyr@mailinator.com2026', // Auto-value për password
+              controller: passCtrl..text = 'Saxyr@mailinator.com2026',
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Password'),
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: loading ? null : submit,
-              child: loading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('LOGIN'),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: loading ? null : submit,
+                child: loading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('LOGIN'),
+              ),
             ),
           ],
         ),

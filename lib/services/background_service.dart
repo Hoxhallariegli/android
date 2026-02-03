@@ -7,10 +7,17 @@ import 'location_service.dart';
 void onStart(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  print('[BG] Background service STARTED');
+  // Handle service stop
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
 
-  Timer.periodic(const Duration(seconds: 30), (_) async {
-    print('[BG] Tick - sending location');
-    await LocationService.sendCurrentLocation();
+  // Location update loop
+  Timer.periodic(const Duration(seconds: 30), (timer) async {
+    try {
+      await LocationService.sendCurrentLocation();
+    } catch (e) {
+      debugPrint('[BG][ERROR] Location update failed: $e');
+    }
   });
 }

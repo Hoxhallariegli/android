@@ -1,7 +1,9 @@
+import 'package:dio/dio.dart';
 import '../core/api.dart';
+import '../core/api_exception.dart';
 
 class TripService {
-  static Future<bool> createTrip({
+  static Future<void> createTrip({
     required String from,
     required String to,
     required String type,
@@ -19,9 +21,10 @@ class TripService {
           'persons': persons,
         },
       );
-      return true;
-    } catch (_) {
-      return false;
+    } on DioException catch (e) {
+      throw ApiException.fromDioError(e);
+    } catch (e) {
+      throw ApiException(message: "An unexpected error occurred");
     }
   }
 }

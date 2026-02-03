@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/trip_service.dart';
+import '../core/api_exception.dart';
+import '../utils/ui_utils.dart';
 
 class AddTripScreen extends StatefulWidget {
   const AddTripScreen({super.key});
@@ -11,64 +13,60 @@ class AddTripScreen extends StatefulWidget {
 class _AddTripScreenState extends State<AddTripScreen> {
   final fromCtrl = TextEditingController();
   final toCtrl = TextEditingController();
-  final personsCtrl = TextEditingController(); // ✅ ADDED
+  final personsCtrl = TextEditingController();
   final priceCtrl = TextEditingController();
 
-  String tripType = 'custom'; // custom | template
+  String tripType = 'custom';
   bool loading = false;
 
   Future<void> submit() async {
-    // BASIC VALIDATION
     if (fromCtrl.text.trim().isEmpty ||
         toCtrl.text.trim().isEmpty ||
         priceCtrl.text.trim().isEmpty ||
-        personsCtrl.text.trim().isEmpty) { // ✅ include persons
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Fill all fields')),
-      );
+        personsCtrl.text.trim().isEmpty) {
+      UiUtils.showError(context, 'Please fill all required fields');
       return;
     }
 
     final price = int.tryParse(priceCtrl.text);
     if (price == null || price <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter valid price')),
-      );
+      UiUtils.showError(context, 'Please enter a valid price');
       return;
     }
 
     final persons = int.tryParse(personsCtrl.text);
     if (persons == null || persons < 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Persons must be at least 1')),
-      );
-      return;
-    }
-    if (persons > 20) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Persons cannot exceed 20')),
-      );
+      UiUtils.showError(context, 'Persons must be at least 1');
       return;
     }
 
     setState(() => loading = true);
 
-    final success = await TripService.createTrip(
-      from: fromCtrl.text.trim(),
-      to: toCtrl.text.trim(),
-      type: tripType,
-      price: price,
-      persons: persons, // ✅ PASS IT HERE
-    );
-
-    setState(() => loading = false);
-
-    if (success && mounted) {
-      Navigator.pop(context, true);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to save trip')),
+    try {
+      await TripService.createTrip(
+        from: fromCtrl.text.trim(),
+        to: toCtrl.text.trim(),
+        type: tripType,
+        price: price,
+        persons: persons,
       );
+      
+      if (mounted) {
+        UiUtils.showSuccess(context, 'Trip created successfully');
+        Navigator.pop(context, true);
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        UiUtils.showError(context, e.message);
+      }
+    } catch (e) {
+      if (mounted) {
+        UiUtils.showError(context, 'An unexpected error occurred');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
@@ -76,7 +74,7 @@ class _AddTripScreenState extends State<AddTripScreen> {
   void dispose() {
     fromCtrl.dispose();
     toCtrl.dispose();
-    personsCtrl.dispose(); // ✅ dispose
+    personsCtrl.dispose();
     priceCtrl.dispose();
     super.dispose();
   }
@@ -91,48 +89,52 @@ class _AddTripScreenState extends State<AddTripScreen> {
           children: [
             TextField(
               controller: fromCtrl,
-              decoration: const InputDecoration(labelText: 'From *'),
+              decoration: const InputDecoration(
+                labelText: 'From *',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
-
             TextField(
               controller: toCtrl,
-              decoration: const InputDecoration(labelText: 'To *'),
+              decoration: const InputDecoration(
+                labelText: 'To *',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
-
             TextField(
-              controller: personsCtrl, // ✅ NEW FIELD
+              controller: personsCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Persons * (e.g. 2)'),
+              decoration: const InputDecoration(
+                labelText: 'Number of Persons *',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
-
-            // DropdownButtonFormField<String>(
-            //   value: tripType,
-            //   decoration: const InputDecoration(labelText: 'Trip Type'),
-            //   items: const [
-            //     DropdownMenuItem(value: 'custom', child: Text('Custom')),
-            //     DropdownMenuItem(value: 'template', child: Text('Package')),
-            //   ],
-            //   onChanged: (v) => setState(() => tripType = v!),
-            // ),
-            // const SizedBox(height: 12),
-
             TextField(
               controller: priceCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Price (ALL) *'),
+              decoration: const InputDecoration(
+                labelText: 'Price (ALL) *',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 24),
-
             SizedBox(
-              height: 48,
+              height: 50,
               child: ElevatedButton(
                 onPressed: loading ? null : submit,
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
                 child: loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('SAVE TRIP'),
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('SAVE TRIP', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
           ],

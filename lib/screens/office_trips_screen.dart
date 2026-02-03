@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/office_trips_service.dart';
 import 'package:intl/intl.dart';
+import '../core/api_exception.dart';
+import '../utils/ui_utils.dart';
+import '../services/push_service.dart';
 
 class OfficeTripsScreen extends StatefulWidget {
   const OfficeTripsScreen({super.key});
@@ -11,31 +15,53 @@ class OfficeTripsScreen extends StatefulWidget {
 
 class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
   bool loading = true;
+  bool actionLoading = false;
 
   List<dynamic> freeTrips = [];
   List<dynamic> myActiveTrips = [];
+  
+  StreamSubscription? _refreshSub;
 
   @override
   void initState() {
     super.initState();
     _loadTrips();
+
+    _refreshSub = PushService.refreshStream.listen((event) {
+      if (event == 'trips' && mounted) {
+        debugPrint('[REAL-TIME] Office screen refreshing data...');
+        _loadTrips();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadTrips() async {
     try {
-      setState(() => loading = true);
+      if (mounted) setState(() => loading = true);
       final data = await OfficeTripsService.getOfficeTrips();
-      if (!mounted) return;
-
-      setState(() {
-        freeTrips = data['free'] ?? [];
-        myActiveTrips = data['my_active'] ?? [];
-        loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          freeTrips = data['free'] ?? [];
+          myActiveTrips = data['my_active'] ?? [];
+          loading = false;
+        });
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => loading = false);
+        UiUtils.showError(context, e.message);
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => loading = false);
-      _error(e);
+      if (mounted) {
+        setState(() => loading = false);
+        UiUtils.showError(context, "Failed to load office trips");
+      }
     }
   }
 
@@ -43,20 +69,37 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
 
   Future<void> _takeTrip(dynamic trip) async {
     try {
+      setState(() => actionLoading = true);
       await OfficeTripsService.takeTrip(trip['id']);
+      if (mounted) UiUtils.showSuccess(context, "Trip assigned to you");
       await _loadTrips();
-    } catch (e) {
-      _error(e);
+    } on ApiException catch (e) {
+      if (mounted) {
+        UiUtils.showError(context, e.message);
+        // 🔥 REFRESH IF TRIP WAS ALREADY TAKEN (422)
+        if (e.statusCode == 422) {
+          debugPrint('[SYNC] Trip unavailable, refreshing list...');
+          await _loadTrips();
+        }
+      }
+    } finally {
+      if (mounted) setState(() => actionLoading = false);
     }
   }
 
   Future<void> _completeTrip(dynamic trip) async {
     try {
+      setState(() => actionLoading = true);
       await OfficeTripsService.completeTrip(trip['id']);
-      Navigator.pop(context);
+      if (mounted) {
+        Navigator.pop(context); // Close modal
+        UiUtils.showSuccess(context, "Trip completed successfully");
+      }
       await _loadTrips();
-    } catch (e) {
-      _error(e);
+    } on ApiException catch (e) {
+      if (mounted) UiUtils.showError(context, e.message);
+    } finally {
+      if (mounted) setState(() => actionLoading = false);
     }
   }
 
@@ -69,79 +112,122 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Trip Details',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-
-                _field('Pickup', pickup),
-                _field('Dropoff', dropoff),
-                _field('Persons', persons, isNumber: true),
-                _field('Base Price', price, isNumber: true),
-
-                const SizedBox(height: 24),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
+      builder: (modalContext) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: SafeArea(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 35),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 5,
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          try {
-                            await OfficeTripsService.updateTrip(
-                              trip['id'],
-                              pickupLocation: pickup.text,
-                              dropoffLocation: dropoff.text,
-                              persons: int.parse(persons.text),
-                              basePrice: double.parse(price.text),
-                            );
-                            Navigator.pop(context);
-                            await _loadTrips();
-                          } catch (e) {
-                            _error(e);
-                          }
-                        },
-                        child: const Text('Update'),
+                      const Text(
+                        'Edit Trip Details',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(height: 20),
 
-                const SizedBox(height: 12),
+                      _field('Pickup Location', pickup, icon: Icons.location_on),
+                      _field('Dropoff Location', dropoff, icon: Icons.flag),
+                      Row(
+                        children: [
+                          Expanded(child: _field('Persons', persons, isNumber: true, icon: Icons.people)),
+                          const SizedBox(width: 12),
+                          Expanded(child: _field('Price (ALL)', price, isNumber: true, icon: Icons.money)),
+                        ],
+                      ),
 
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                    ),
-                    onPressed: () => _completeTrip(trip),
-                    child: const Text('COMPLETE'),
+                      const SizedBox(height: 24),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 15),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 15),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: actionLoading ? null : () async {
+                                try {
+                                  setModalState(() => actionLoading = true);
+                                  await OfficeTripsService.updateTrip(
+                                    trip['id'],
+                                    pickupLocation: pickup.text,
+                                    dropoffLocation: dropoff.text,
+                                    persons: int.tryParse(persons.text) ?? 1,
+                                    basePrice: double.tryParse(price.text) ?? 0.0,
+                                  );
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                    UiUtils.showSuccess(context, "Trip updated");
+                                  }
+                                  await _loadTrips();
+                                } on ApiException catch (e) {
+                                  if (mounted) UiUtils.showError(context, e.message);
+                                } finally {
+                                  setModalState(() => actionLoading = false);
+                                }
+                              },
+                              child: actionLoading 
+                                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Text('Update'),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: actionLoading ? null : () => _completeTrip(trip),
+                          child: actionLoading 
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : const Text('MARK AS COMPLETED', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-
-                const SizedBox(height: 16),
-              ],
+              ),
             ),
           ),
         ),
@@ -149,12 +235,15 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
     );
   }
 
-  // ================= UI =================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Office Trips')),
+      appBar: AppBar(
+        title: const Text('Office Trips'),
+        actions: [
+          IconButton(onPressed: _loadTrips, icon: const Icon(Icons.refresh))
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _loadTrips,
         child: loading
@@ -162,56 +251,28 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
             : ListView(
           padding: const EdgeInsets.all(16),
           children: [
-
-            // MY ACTIVE
             if (myActiveTrips.isNotEmpty) ...[
-              const Text(
-                'My Active Trips',
-                style:
-                TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              const _SectionHeader(title: 'My Active Trips', icon: Icons.directions_car),
               const SizedBox(height: 8),
-              ...myActiveTrips.map((trip) => Card(
-                color: Colors.green.shade50,
-                child: ListTile(
-                  title: Text(
-                    '${trip['pickup_location']} → ${trip['dropoff_location']}',
-                  ),
-                  subtitle: Text(
-                    'Persons: ${trip['persons']} | ${trip['base_price']} ALL\n'
-                        '${_formatDate(trip['created_at'])}',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _openTripModal(trip),
-                ),
+              ...myActiveTrips.map((trip) => _TripCard(
+                trip: trip,
+                isActive: true,
+                onTap: () => _openTripModal(trip),
               )),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
             ],
 
-            // FREE
-            const Text(
-              'Free Trips',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            const _SectionHeader(title: 'Free Trips Available', icon: Icons.list_alt),
             const SizedBox(height: 8),
 
             if (freeTrips.isEmpty)
-              const Text('No free trips')
+              const _EmptyState(message: 'No free trips available right now')
             else
-              ...freeTrips.map((trip) => Card(
-                child: ListTile(
-                  title: Text(
-                    '${trip['pickup_location']} → ${trip['dropoff_location']}',
-                  ),
-                  subtitle: Text(
-                    'Persons: ${trip['persons']} | ${trip['base_price']} ALL\n'
-                        '${_formatDate(trip['created_at'])}',
-                  ),
-                  trailing: ElevatedButton(
-                    onPressed: () => _takeTrip(trip),
-                    child: const Text('TAKE'),
-                  ),
-                ),
+              ...freeTrips.map((trip) => _TripCard(
+                trip: trip,
+                isActive: false,
+                onAction: () => _takeTrip(trip),
+                actionLoading: actionLoading,
               )),
           ],
         ),
@@ -219,37 +280,125 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
     );
   }
 
-  // ================= HELPERS =================
-
   Widget _field(String label, TextEditingController c,
-      {bool isNumber = false}) {
+      {bool isNumber = false, IconData? icon}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 16),
       child: TextField(
         controller: c,
         keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+        textInputAction: TextInputAction.next,
         decoration: InputDecoration(
+          prefixIcon: icon != null ? Icon(icon, size: 20) : null,
           labelText: label,
-          border: const OutlineInputBorder(),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
       ),
     );
   }
+}
 
-  static String _formatDate(String date) {
-    try {
-      return DateFormat('HH:mm | dd/MM/yy')
-          .format(DateTime.parse(date));
-    } catch (_) {
-      return '';
-    }
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  const _SectionHeader({required this.title, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.blueGrey),
+        const SizedBox(width: 8),
+        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+      ],
+    );
   }
+}
 
-  void _error(dynamic e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(e.toString()),
-        backgroundColor: Colors.red,
+class _TripCard extends StatelessWidget {
+  final dynamic trip;
+  final bool isActive;
+  final VoidCallback? onTap;
+  final VoidCallback? onAction;
+  final bool actionLoading;
+
+  const _TripCard({
+    required this.trip,
+    required this.isActive,
+    this.onTap,
+    this.onAction,
+    this.actionLoading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: isActive ? 4 : 1,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: isActive ? Colors.green.shade50 : Colors.white,
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(12),
+        onTap: onTap,
+        title: Text(
+          '${trip['pickup_location']} → ${trip['dropoff_location']}',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.people_outline, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text('${trip['persons']} Persons', style: const TextStyle(color: Colors.grey)),
+                  const SizedBox(width: 12),
+                  const Icon(Icons.account_balance_wallet_outlined, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text('${trip['base_price']} ALL', style: const TextStyle(color: Colors.grey)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                DateFormat('HH:mm | dd/MM/yy').format(DateTime.parse(trip['created_at'])),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+        trailing: isActive 
+          ? const Icon(Icons.edit, color: Colors.green)
+          : ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: actionLoading ? null : onAction,
+              child: const Text('TAKE'),
+            ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final String message;
+  const _EmptyState({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Column(
+          children: [
+            Icon(Icons.info_outline, size: 48, color: Colors.grey.shade300),
+            const SizedBox(height: 12),
+            Text(message, style: TextStyle(color: Colors.grey.shade500)),
+          ],
+        ),
       ),
     );
   }

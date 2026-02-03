@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import '../utils/storage.dart';
 import '../core/api.dart';
+import '../core/api_exception.dart';
 
 class AuthService {
   static Future<bool> login(String email, String password) async {
@@ -15,31 +16,28 @@ class AuthService {
       );
 
       final token = res.data['token'];
-      if (token == null) return false;
+      if (token == null) {
+        throw ApiException(message: "Server returned no token");
+      }
 
       await Storage.saveToken(token);
-
       Api.dio.options.headers['Authorization'] = 'Bearer $token';
 
       return true;
+    } on DioException catch (e) {
+      throw ApiException.fromDioError(e);
     } catch (e) {
-      if (e is DioException && e.response != null) {
-        print('❌ Login failed: ${e.response?.data}');
-      } else {
-        print('❌ Login error: $e');
-      }
-      return false;
+      throw ApiException(message: "An unexpected error occurred during login");
     }
   }
-
 
   static Future<void> logout() async {
     try {
       await Api.dio.post('/logout');
     } catch (_) {
       // ignore
+    } finally {
+      await Storage.clear();
     }
-
-    await Storage.clear();
   }
 }
