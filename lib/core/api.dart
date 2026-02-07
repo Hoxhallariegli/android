@@ -7,7 +7,7 @@ import 'server_status.dart';
 class Api {
   static final Dio dio = Dio(
     BaseOptions(
-       baseUrl: 'http://80.90.89.238:80/api',
+       baseUrl: 'https://m.classtours.al/api',
       // baseUrl: 'http://10.10.12.14:80/api',
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
