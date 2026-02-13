@@ -29,7 +29,6 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
 
     _refreshSub = PushService.refreshStream.listen((event) {
       if (event == 'trips' && mounted) {
-        debugPrint('[REAL-TIME] Office screen refreshing data...');
         _loadTrips();
       }
     });
@@ -60,7 +59,7 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => loading = false);
-        UiUtils.showError(context, "Failed to load office trips");
+        UiUtils.showError(context, "Dështoi ngarkimi i udhëtimeve");
       }
     }
   }
@@ -71,29 +70,37 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
     try {
       setState(() => actionLoading = true);
       await OfficeTripsService.takeTrip(trip['id']);
-      if (mounted) UiUtils.showSuccess(context, "Trip assigned to you");
+      if (mounted) UiUtils.showSuccess(context, "Udhëtimi juaj u caktua");
       await _loadTrips();
     } on ApiException catch (e) {
       if (mounted) {
         UiUtils.showError(context, e.message);
-        // 🔥 REFRESH IF TRIP WAS ALREADY TAKEN (422)
-        if (e.statusCode == 422) {
-          debugPrint('[SYNC] Trip unavailable, refreshing list...');
-          await _loadTrips();
-        }
+        if (e.statusCode == 422) await _loadTrips();
       }
     } finally {
       if (mounted) setState(() => actionLoading = false);
     }
   }
 
-  Future<void> _completeTrip(dynamic trip) async {
+  Future<void> _handleComplete(dynamic trip, {
+    required String pickup,
+    required String dropoff,
+    required int persons,
+    required double price,
+  }) async {
     try {
       setState(() => actionLoading = true);
+      await OfficeTripsService.updateTrip(
+        trip['id'],
+        pickupLocation: pickup,
+        dropoffLocation: dropoff,
+        persons: persons,
+        basePrice: price,
+      );
       await OfficeTripsService.completeTrip(trip['id']);
       if (mounted) {
-        Navigator.pop(context); // Close modal
-        UiUtils.showSuccess(context, "Trip completed successfully");
+        Navigator.pop(context);
+        UiUtils.showSuccess(context, "Udhëtimi u mbyll me sukses");
       }
       await _loadTrips();
     } on ApiException catch (e) {
@@ -113,119 +120,71 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
       builder: (modalContext) => StatefulBuilder(
         builder: (context, setModalState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
           child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.85,
-            ),
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
             child: SafeArea(
               child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 35),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 5,
-                        margin: const EdgeInsets.only(bottom: 20),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(10),
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 35),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(width: 40, height: 5, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(10))),
+                    const Text('Detajet e Udhëtimit', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 25),
+                    _modalField('Nisja', pickup, icon: Icons.location_on),
+                    _modalField('Mbërritja', dropoff, icon: Icons.flag),
+                    Row(
+                      children: [
+                        Expanded(child: _modalField('Persona', persons, isNumber: true, icon: Icons.people)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _modalField('Çmimi (ALL)', price, isNumber: true, icon: Icons.money)),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Anulo'),
+                          ),
                         ),
-                      ),
-                      const Text(
-                        'Edit Trip Details',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 20),
-
-                      _field('Pickup Location', pickup, icon: Icons.location_on),
-                      _field('Dropoff Location', dropoff, icon: Icons.flag),
-                      Row(
-                        children: [
-                          Expanded(child: _field('Persons', persons, isNumber: true, icon: Icons.people)),
-                          const SizedBox(width: 12),
-                          Expanded(child: _field('Price (ALL)', price, isNumber: true, icon: Icons.money)),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 15),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancel'),
-                            ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                            onPressed: actionLoading ? null : () async {
+                              try {
+                                setModalState(() => actionLoading = true);
+                                await OfficeTripsService.updateTrip(trip['id'], pickupLocation: pickup.text, dropoffLocation: dropoff.text, persons: int.tryParse(persons.text) ?? 1, basePrice: double.tryParse(price.text) ?? 0.0);
+                                if (mounted) { Navigator.pop(context); UiUtils.showSuccess(context, "Udhëtimi u përditësua"); }
+                                await _loadTrips();
+                              } on ApiException catch (e) {
+                                if (mounted) UiUtils.showError(context, e.message);
+                              } finally {
+                                setModalState(() => actionLoading = false);
+                              }
+                            },
+                            child: actionLoading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Ruaj'),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 15),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              onPressed: actionLoading ? null : () async {
-                                try {
-                                  setModalState(() => actionLoading = true);
-                                  await OfficeTripsService.updateTrip(
-                                    trip['id'],
-                                    pickupLocation: pickup.text,
-                                    dropoffLocation: dropoff.text,
-                                    persons: int.tryParse(persons.text) ?? 1,
-                                    basePrice: double.tryParse(price.text) ?? 0.0,
-                                  );
-                                  if (mounted) {
-                                    Navigator.pop(context);
-                                    UiUtils.showSuccess(context, "Trip updated");
-                                  }
-                                  await _loadTrips();
-                                } on ApiException catch (e) {
-                                  if (mounted) UiUtils.showError(context, e.message);
-                                } finally {
-                                  setModalState(() => actionLoading = false);
-                                }
-                              },
-                              child: actionLoading 
-                                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : const Text('Update'),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 15),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          onPressed: actionLoading ? null : () => _completeTrip(trip),
-                          child: actionLoading 
-                            ? const CircularProgressIndicator(color: Colors.white)
-                            : const Text('MARK AS COMPLETED', style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                        onPressed: actionLoading ? null : () => _handleComplete(trip, pickup: pickup.text, dropoff: dropoff.text, persons: int.tryParse(persons.text) ?? 1, price: double.tryParse(price.text) ?? 0.0),
+                        child: actionLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('PËRFUNDO UDHËTIMIN', style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -238,12 +197,7 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Office Trips'),
-        actions: [
-          IconButton(onPressed: _loadTrips, icon: const Icon(Icons.refresh))
-        ],
-      ),
+      backgroundColor: const Color(0xFFF8F8F8),
       body: RefreshIndicator(
         onRefresh: _loadTrips,
         child: loading
@@ -252,47 +206,35 @@ class _OfficeTripsScreenState extends State<OfficeTripsScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             if (myActiveTrips.isNotEmpty) ...[
-              const _SectionHeader(title: 'My Active Trips', icon: Icons.directions_car),
-              const SizedBox(height: 8),
-              ...myActiveTrips.map((trip) => _TripCard(
-                trip: trip,
-                isActive: true,
-                onTap: () => _openTripModal(trip),
-              )),
-              const SizedBox(height: 24),
+              const _SectionHeader(title: 'Udhëtimet e Mia Aktive', icon: Icons.directions_car),
+              const SizedBox(height: 10),
+              ...myActiveTrips.map((trip) => _TripCard(trip: trip, isActive: true, onTap: () => _openTripModal(trip))),
+              const SizedBox(height: 25),
             ],
-
-            const _SectionHeader(title: 'Free Trips Available', icon: Icons.list_alt),
-            const SizedBox(height: 8),
-
+            const _SectionHeader(title: 'Udhëtime të Lira', icon: Icons.list_alt),
+            const SizedBox(height: 10),
             if (freeTrips.isEmpty)
-              const _EmptyState(message: 'No free trips available right now')
+              const _EmptyState(message: 'Nuk ka udhëtime të lira për momentin')
             else
-              ...freeTrips.map((trip) => _TripCard(
-                trip: trip,
-                isActive: false,
-                onAction: () => _takeTrip(trip),
-                actionLoading: actionLoading,
-              )),
+              ...freeTrips.map((trip) => _TripCard(trip: trip, isActive: false, onAction: () => _takeTrip(trip), actionLoading: actionLoading)),
           ],
         ),
       ),
     );
   }
 
-  Widget _field(String label, TextEditingController c,
-      {bool isNumber = false, IconData? icon}) {
+  Widget _modalField(String label, TextEditingController c, {bool isNumber = false, IconData? icon}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: TextField(
         controller: c,
         keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-        textInputAction: TextInputAction.next,
         decoration: InputDecoration(
-          prefixIcon: icon != null ? Icon(icon, size: 20) : null,
+          prefixIcon: Icon(icon, size: 20, color: const Color(0xFFD4AF37)),
           labelText: label,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          filled: true,
+          fillColor: Colors.grey.shade50,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
         ),
       ),
     );
@@ -303,16 +245,9 @@ class _SectionHeader extends StatelessWidget {
   final String title;
   final IconData icon;
   const _SectionHeader({required this.title, required this.icon});
-
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: Colors.blueGrey),
-        const SizedBox(width: 8),
-        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-      ],
-    );
+    return Row(children: [Icon(icon, size: 20, color: Colors.black87), const SizedBox(width: 8), Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87))]);
   }
 }
 
@@ -322,62 +257,57 @@ class _TripCard extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onAction;
   final bool actionLoading;
-
-  const _TripCard({
-    required this.trip,
-    required this.isActive,
-    this.onTap,
-    this.onAction,
-    this.actionLoading = false,
-  });
-
+  const _TripCard({required this.trip, required this.isActive, this.onTap, this.onAction, this.actionLoading = false});
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: isActive ? 4 : 1,
+      elevation: 2,
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: isActive ? Colors.green.shade50 : Colors.white,
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      color: Colors.white,
+      child: InkWell(
         onTap: onTap,
-        title: Text(
-          '${trip['pickup_location']} → ${trip['dropoff_location']}',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8),
+        borderRadius: BorderRadius.circular(15),
+        child: Padding(
+          padding: const EdgeInsets.all(15),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('${trip['pickup_location']} → ${trip['dropoff_location']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  if (isActive) const Icon(Icons.edit, color: Color(0xFFD4AF37), size: 20),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
                 children: [
                   const Icon(Icons.people_outline, size: 16, color: Colors.grey),
                   const SizedBox(width: 4),
-                  Text('${trip['persons']} Persons', style: const TextStyle(color: Colors.grey)),
-                  const SizedBox(width: 12),
+                  Text('${trip['persons']} Persona', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                  const SizedBox(width: 15),
                   const Icon(Icons.account_balance_wallet_outlined, size: 16, color: Colors.grey),
                   const SizedBox(width: 4),
-                  Text('${trip['base_price']} ALL', style: const TextStyle(color: Colors.grey)),
+                  Text('${trip['base_price']} ALL', style: const TextStyle(color: Colors.grey, fontSize: 13)),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                DateFormat('HH:mm | dd/MM/yy').format(DateTime.parse(trip['created_at'])),
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              const Divider(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(DateFormat('HH:mm | dd/MM/yy').format(DateTime.parse(trip['created_at'])), style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  if (!isActive) 
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD4AF37), foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: const EdgeInsets.symmetric(horizontal: 20)),
+                      onPressed: actionLoading ? null : onAction,
+                      child: const Text('MERR', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                ],
               ),
             ],
           ),
         ),
-        trailing: isActive 
-          ? const Icon(Icons.edit, color: Colors.green)
-          : ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: actionLoading ? null : onAction,
-              child: const Text('TAKE'),
-            ),
       ),
     );
   }
@@ -386,20 +316,8 @@ class _TripCard extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   final String message;
   const _EmptyState({required this.message});
-
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40),
-        child: Column(
-          children: [
-            Icon(Icons.info_outline, size: 48, color: Colors.grey.shade300),
-            const SizedBox(height: 12),
-            Text(message, style: TextStyle(color: Colors.grey.shade500)),
-          ],
-        ),
-      ),
-    );
+    return Center(child: Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Column(children: [Icon(Icons.info_outline, size: 48, color: Colors.grey.shade300), const SizedBox(height: 12), Text(message, style: TextStyle(color: Colors.grey.shade500))])));
   }
 }

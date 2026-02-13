@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../services/dashboard_service.dart';
 import 'add_trip_screen.dart';
 
@@ -14,6 +13,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int tripsToday = 0;
   double totalAmount = 0.0;
   bool isLoading = true;
+
+  final Color goldColor = const Color(0xFFD4AF37);
 
   @override
   void initState() {
@@ -38,87 +39,126 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Column(
         children: [
-          // HEADER IMAGE SI FOTOJA
+          // PREMIUM GRADIENT HEADER
           Container(
-            height: 180,
-            padding: const EdgeInsets.all(16),
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 40, 20, 30),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF1A1A1A), Color(0xFF333333)],
+              ),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
+              ),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Image.asset(
-                  'assets/images/taxy.png',
-                  height: 70,
-                  fit: BoxFit.contain,
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'My Trips',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Text(
+                  'Këtu është përmbledhja juaj për sot.',
+                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
                 ),
               ],
             ),
           ),
 
+          const SizedBox(height: 25),
 
-          const SizedBox(height: 12),
-
+          // ADD NEW TRIP BUTTON
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: ElevatedButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text('Add New Trip'),
+              icon: const Icon(Icons.add_circle_outline, color: Colors.black),
+              label: const Text(
+                'SHTO UDHËTIM TË RI',
+                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, letterSpacing: 1.1),
+              ),
               style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 48),
+                backgroundColor: goldColor,
+                minimumSize: const Size(double.infinity, 55),
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
               ),
               onPressed: () async {
                 final added = await Navigator.push<bool>(
                   context,
                   MaterialPageRoute(builder: (_) => const AddTripScreen()),
                 );
-
-                if (added == true) {
-                  _loadSummary(); // 🔥 RIFRESKIM REAL
-                }
+                if (added == true) _loadSummary();
               },
-
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 25),
 
+          // STATS CARDS
           Expanded(
             child: isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : ListView(
-              children: [
-                _statCard('Trips Today', tripsToday.toString()),
-                _statCard(
-                  'Total Amount',
-                  '${totalAmount.toStringAsFixed(2)} ALL',
-                ),
-              ],
-            ),
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    children: [
+                      _buildStatCard(
+                        'Udhëtime Sot',
+                        tripsToday.toString(),
+                        Icons.directions_car_filled_outlined,
+                        goldColor,
+                      ),
+                      const SizedBox(height: 15),
+                      _buildStatCard(
+                        'Shuma Total',
+                        '${totalAmount.toStringAsFixed(2)} ALL',
+                        Icons.account_balance_wallet_outlined,
+                        Colors.green.shade600,
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _statCard(String title, String value) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: ListTile(
-        title: Text(title),
-        trailing: Text(
-          value,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+  Widget _buildStatCard(String title, String value, IconData icon, Color accentColor) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5)),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: accentColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(icon, color: accentColor, size: 30),
+          ),
+          const SizedBox(width: 20),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+              const SizedBox(height: 5),
+              Text(
+                value,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
